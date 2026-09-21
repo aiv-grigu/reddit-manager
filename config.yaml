@@ -1,0 +1,85 @@
+# WhoCanFindMe Reddit Manager - config
+# Everything the system does is governed here. Edit this, not the code.
+
+account_label: default        # label for this instance. One instance, one Reddit account, one person.
+
+# --- Where to look for threads to answer -------------------------------------
+# tier 1: subs where self-built projects are on topic and the owner's tool is directly relevant. Weighted highest.
+# tier 2: subs where small-business owners ask the questions the owner can answer. Comments only, never a product mention unless asked AND allowed.
+# tier 3: broad tech subs where the owner has general expertise (web, AI, sysadmin, automation).
+subs:
+  tier1: [indiehackers, SideProject, juststart, alphaandbetausers, IMadeThis]
+  tier2: [smallbusiness, ecommerce, shopify, SEO, bigseo, DigitalMarketing, marketing, SweatyStartup, Wordpress, smallbusinessuk, Entrepreneur, SaaS]
+  tier3: [webdev, artificial, ChatGPT, startups, EntrepreneurRideAlong, sysadmin, automation]
+
+banned_subs: [AISearchLab]   # subs this account must never read from or act in (e.g. where mods have asked it not to). Respected unconditionally.
+
+# Subs where the product may be named in a comment WITHOUT being asked (rules verified by a human).
+# Keep this list tiny. Add a sub only after reading its sidebar yourself.
+mention_allowed_subs: [SideProject, IMadeThis, alphaandbetausers]
+
+# Subs where the product must NEVER be named, even if asked (their rules forbid or tightly limit self-promotion).
+mention_forbidden_subs: [SaaS, smallbusiness, ecommerce, shopify, Wordpress, SweatyStartup, SEO, bigseo]
+
+# --- What counts as a thread worth answering ---------------------------------
+queries:
+  - "ChatGPT recommend my business"
+  - "show up in ChatGPT"
+  - "AI search visibility"
+  - "GPTBot robots.txt"
+  - "PerplexityBot"
+  - "llms.txt"
+  - "cited by ChatGPT"
+  - "Perplexity citations"
+  - "AI overviews traffic drop"
+  - "Cloudflare AI crawlers"
+  - "generative engine optimization"
+  - "GEO vs SEO"
+  - "structured data schema AI"
+  - "ChatGPT shopping recommendations"
+help_signals: ["?", "how do", "how to", "why does", "why is", "anyone", "help", "advice", "should i", "does anyone", "what do you"]
+max_thread_age_hours: 36
+max_comments_on_thread: 25       # fewer comments = your answer gets seen
+min_thread_score: 0
+
+# --- Pacing. Keeps the account at a normal human rhythm. Do not loosen. -------
+pacing:
+  max_comments_per_day: 6
+  max_comments_per_sub_per_day: 2
+  min_minutes_between_comments: 25
+  jitter_minutes: 20               # random extra wait so timing never looks mechanical
+  active_hours_utc: [7, 21]        # only post between these hours
+  max_mentions_per_10_comments: 1  # the 9:1 rule, enforced
+  min_comments_in_sub_before_mention: 5   # earn standing before ever naming the product there
+  days_between_posts: 3            # value posts, not comments
+
+# --- Product mention wording (only used when allowed; always disclosed) -------
+product:
+  name: WhoCanFindMe
+  url: whocanfindme.com
+  disclosure_lines:
+    - "full disclosure I built a checker for this (whocanfindme.com) but the manual checks above cost nothing"
+    - "I built a tool that does this in one go, whocanfindme.com, bias obviously noted. the manual route works fine too"
+    - "we built whocanfindme.com for exactly this, so take that with the pinch of salt it deserves"
+
+# --- Value post engine (weekly, not about the product) -----------------------
+value_posts:
+  post_allowed_subs: [SideProject, juststart, IMadeThis]   # only subs whose rules you have read. Add slowly.
+  themes:
+    - "what actually changed in AI search this week, with sources"
+    - "a teardown of one well known site: crawler access, schema, answer-first, what an AI can and can't read"
+    - "one automation or IT lesson from running a small software business"
+    - "a myth in SEO or AI search and what the evidence says"
+    - "a practical checklist people can run in 15 minutes with no tools"
+  news_feeds:
+    - https://searchengineland.com/feed
+    - https://www.seroundtable.com/feed
+    - https://blog.cloudflare.com/rss/
+    - https://openai.com/news/rss.xml
+    - https://www.anthropic.com/rss.xml
+
+# --- Models --------------------------------------------------------------------
+models:
+  writer: claude-sonnet-5
+  editor: claude-sonnet-5
+  max_rewrite_loops: 3

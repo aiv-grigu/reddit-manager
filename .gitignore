@@ -1,0 +1,16 @@
+# secrets and per-instance state
+.env
+*.db
+*.db-journal
+voice.md
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# editor / os
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

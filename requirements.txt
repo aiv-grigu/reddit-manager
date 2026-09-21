@@ -1,0 +1,7 @@
+praw>=7.7
+anthropic>=0.40
+pyyaml>=6.0
+requests>=2.31
+feedparser>=6.0
+python-dotenv>=1.0
+discord.py>=2.3
