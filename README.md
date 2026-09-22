@@ -4,18 +4,38 @@ A personal assistant for one Reddit account. Each morning it finds fresh, unansw
 
 It runs on a small always-on box (Python 3.10+). One instance, one Reddit account, one person. Nothing is ever posted without a manual approval.
 
+## Two modes
+
+Reddit closed self-service Data API access under its [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy). Set `mode:` in `config.yaml`:
+
+| | `rss` (default) | `api` |
+|---|---|---|
+| Reddit API approval | not needed | required |
+| Research | public RSS listing feeds | PRAW, plus keyword search |
+| Keyword matching | local, over fetched entries | server-side search |
+| Comment count / score / locked | not available | available |
+| Karma + inbox check | **not available** | available |
+| Posting | you paste it (`run.py handoff`) | worker posts what you approved |
+
+Everything else is identical: the same scoring, drafting, style checks, approval step and pacing rules.
+
+Two honest limits of `rss` mode. Reddit's `/search/.rss` endpoints return 429, so the `queries:` list is applied locally to what the listing feeds return rather than as a search. And the inbox cannot be read, so the morning run **cannot** warn you about a moderator message; it tells you to check the inbox yourself instead of pretending it looked.
+
 ## What it does each day
 
 **07:00 `morning`**
-1. Checks the account: karma, inbox, and any moderator message goes straight to your phone before anything else, so you read it before approving anything.
-2. Reads `/new` and `/rising` in the configured subreddits plus a handful of keyword searches (config.yaml). Scores each thread: fresh, few comments, a question in the title, on-topic. Drops anything seen before, locked, archived, or already answered by this account. Roughly 100 to 200 API calls a day in total.
+1. Checks the account. In `api` mode karma, inbox, and any moderator message go to your phone first. In `rss` mode it tells you to read your inbox yourself, because it cannot.
+2. Reads the listing feeds for the configured subreddits (`/new`, optionally `/rising`) and scores each thread: fresh, a question in the title, on-topic against `queries:`. Drops anything seen before or already answered by this account. In `rss` mode requests are paced ~45s apart, so a sweep of ~24 subs takes 15 to 25 minutes.
 3. For the best 8 threads, code (not the model) decides whether naming the owner's product is even permitted: the sub's policy, the 9:1 ratio, prior helpful comments in that sub, and whether the thread actually asked for tools.
 4. An LLM drafts a reply seeded with the owner's writing samples (`voice.md`). A second pass edits it into the owner's plain style. A deterministic rules engine checks it. Up to three loops; if it still fails, it is dropped.
 5. Every 3 days it may also draft one informational text post (industry news, a checklist, a teardown; never about the product) for a sub whose rules the owner has read.
 6. Everything lands in a private Discord channel with Approve / Reject buttons. The owner reads every draft.
 
 **All day `worker`**
-Runs as a Discord bot listening for the owner's button presses. Posts approved items one at a time, 25 to 45 minutes apart with random jitter, max 6 comments a day, max 2 per sub, only in daytime hours, with a short pause before each action. If Reddit returns a rate limit, captcha or account notice, it stops and messages the owner.
+Runs as a Discord bot listening for the owner's button presses. In `api` mode it also posts approved items one at a time, 25 to 45 minutes apart with random jitter, max 6 comments a day, max 2 per sub, only in daytime hours. If Reddit returns a rate limit, captcha or account notice, it stops and messages the owner. In `rss` mode it only records decisions; nothing is posted for you.
+
+**When you have a minute, `handoff`** (`rss` mode)
+`python run.py handoff` takes the next approved draft, checks it against the same pacing rules, puts it on your clipboard and opens the thread in your browser. You read it in context, paste, and reply yourself. Then you tell it what happened: yes, not yet, or drop it. The daily counters and the 9:1 mention ratio only advance when you confirm you actually posted, so the limits stay honest.
 
 ## How it behaves
 
@@ -42,20 +62,23 @@ Add to `voice.md` any time you have new real samples of your own writing. More s
 
 ## Setup (20 minutes, once)
 
-1. **Reddit API access**: Reddit requires approval under its [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy) before an app can be created. Submit a Data Access Request describing this tool, then create a **script** app at reddit.com/prefs/apps with redirect uri `http://localhost:8080`. Copy the client id (under the app name) and secret.
-2. **Discord bot**: discord.com/developers > New Application > Bot > Reset Token, copy it. Under OAuth2 > URL Generator tick `bot`, permissions View Channels, Send Messages, Read Message History, open the generated URL and invite it to a private server. Make a channel, copy its id and your own user id (Developer Mode on, right-click > Copy ID). Use a dedicated bot token for this process.
+In `rss` mode (the default) you need two keys, not three:
+
+1. **Discord bot**: discord.com/developers > New Application > Bot > Reset Token, copy it. Under OAuth2 > URL Generator tick `bot`, permissions View Channels, Send Messages, Read Message History, open the generated URL and invite it to a private server. Make a channel, copy its id and your own user id (Developer Mode on, right-click > Copy ID). Use a dedicated bot token for this process.
    (Telegram is a fallback if `DISCORD_BOT_TOKEN` is left empty.)
-3. **Anthropic API key** from console.anthropic.com.
-4. Copy `.env.example` to `.env` and fill it in. Never commit `.env`.
-5. Copy `voice.example.md` to `voice.md` and paste in real samples of your own writing.
-6. `pip install -r requirements.txt` (or run `setup.ps1` on Windows, which does steps 4 to 6 and opens the key pages).
-7. `python run.py dry` to see what it would draft, with nothing sent or posted.
-8. `python run.py status` to confirm the account connects and shows karma.
+2. **Anthropic API key** from console.anthropic.com.
+3. Copy `.env.example` to `.env` and fill it in. Never commit `.env`.
+4. Copy `voice.example.md` to `voice.md` and paste in real samples of your own writing.
+5. `pip install -r requirements.txt` (or run `setup.ps1` on Windows, which does steps 3 to 5 and opens the key pages).
+6. `python run.py dry` to see what it would draft, with nothing sent or posted.
+
+For `api` mode, additionally: Reddit requires approval under its Responsible Builder Policy before an app can be created. Submit a Data Access Request describing this tool honestly (what it reads, that drafts are LLM-written and human-approved, your call volume, that it posts). If approved, create a **script** app at reddit.com/prefs/apps with redirect uri `http://localhost:8080`, put the client id and secret in `.env`, and set `mode: api`. Personal-scale requests are frequently declined; `rss` mode exists so that is not a blocker.
 
 ## Running it
 
-- Windows Task Scheduler / cron: `python run.py morning` daily at 07:00.
+- Windows Task Scheduler / cron: `python run.py morning` daily at 07:00. In `rss` mode allow 15 to 25 minutes for the paced sweep.
 - `python run.py worker` as a long running process (NSSM as a service on Windows, or a scheduled task).
+- `rss` mode: `python run.py handoff` whenever you have a minute, to post what you approved.
 - One instance per Reddit account, each with its own `.env` and its own `RM_DB`, so pacing is tracked per account. Do not run two instances on one account.
 
 ## Before you switch it on: the human parts

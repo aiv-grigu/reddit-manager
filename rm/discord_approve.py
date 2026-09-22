@@ -27,7 +27,9 @@ def send_for_approval(env, qid, kind, sub, thread_title, thread_url, body, title
 def notify(env, text):
     _post(env, {"content": text[:1950]})
 
-def run_worker(reddit, cfg, env):
+def run_worker(reddit, cfg, env, post=True):
+    """post=False (rss mode): handle button presses only. Nothing is posted for you;
+    approved items wait for `python run.py handoff`."""
     import discord
     intents = discord.Intents.none()
     intents.guilds = True
@@ -49,7 +51,12 @@ def run_worker(reddit, cfg, env):
         if ":" not in data: return
         action, qid = data.split(":", 1)
         store.decide(int(qid), "approved" if action == "ok" else "rejected")
-        label = "Approved. Worker will post with pacing." if action == "ok" else "Rejected."
+        if action != "ok":
+            label = "Rejected."
+        elif post:
+            label = "Approved. Worker will post with pacing."
+        else:
+            label = "Approved. Run `python run.py handoff` to paste it yourself."
         try:
             await inter.response.edit_message(content=inter.message.content + f"\n\n> {label}", view=None)
         except Exception:
@@ -60,7 +67,12 @@ def run_worker(reddit, cfg, env):
         ch = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
         while not client.is_closed():
             try:
-                msg = await asyncio.get_event_loop().run_in_executor(None, poster.worker_tick, reddit, cfg, env, _Notifier(env))
+                if post:
+                    msg = await asyncio.get_event_loop().run_in_executor(None, poster.worker_tick, reddit, cfg, env, _Notifier(env))
+                else:
+                    from . import handoff
+                    n = handoff.pending_count()
+                    msg = f"{n} approved, waiting for `run.py handoff`" if n else "nothing approved"
                 print(time.strftime("%H:%M"), msg)
             except Exception as e:
                 print("[worker] error", e)

@@ -3,6 +3,24 @@
 
 account_label: default        # label for this instance. One instance, one Reddit account, one person.
 
+# How this instance reaches Reddit.
+#   rss  no Reddit API. Research from public RSS listing feeds; you paste each approved
+#        draft yourself via `python run.py handoff`. Works today, no approval needed.
+#   api  needs an approved Reddit Data API app (Responsible Builder Policy). Adds karma
+#        and inbox checks, thread comment counts, and posting once you approve a draft.
+mode: rss
+
+# Only used in rss mode. Reddit rate limits anonymous feed requests hard: back-to-back
+# requests get 429, roughly 45s apart is fine. A full morning sweep of ~24 subs takes
+# 15 to 25 minutes, which is why `morning` is a scheduled job and not interactive.
+rss:
+  listings: [new]               # add "rising" to double coverage and roughly double the run time
+  min_seconds_between_requests: 45
+  jitter_seconds: 15
+  retries_on_429: 2
+  backoff_seconds: 120
+  timeout_seconds: 25
+
 # --- Where to look for threads to answer -------------------------------------
 # tier 1: subs where self-built projects are on topic and the owner's tool is directly relevant. Weighted highest.
 # tier 2: subs where small-business owners ask the questions the owner can answer. Comments only, never a product mention unless asked AND allowed.

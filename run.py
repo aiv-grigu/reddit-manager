@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""WhoCanFindMe Reddit Manager.
+"""Reddit Manager.
 
-  python run.py morning   # research Reddit + news, draft comments (+ a value post on schedule), send to Telegram
-  python run.py worker    # long-running: polls Telegram approvals and posts with pacing
-  python run.py status    # account karma, inbox, queue, today's counts
+  python run.py morning   # research + draft, send drafts to Discord for approval
+  python run.py worker    # long-running: handles approvals (api mode also posts, with pacing)
+  python run.py handoff   # rss mode: hand you one approved draft to paste yourself
+  python run.py status    # queue, today's counts, account state where available
   python run.py dry       # research + draft, print to terminal, send nothing, post nothing
+
+Two modes, set by `mode:` in config.yaml.
+  api  needs Reddit Data API approval (Responsible Builder Policy) and posts for you
+       once you approve each draft.
+  rss  no Reddit API at all. Research comes from public RSS listing feeds, and you
+       paste each approved draft into your browser yourself via `handoff`.
 """
 import os, sys, time, random, datetime, pathlib
 import yaml
 from dotenv import load_dotenv
-from rm import research, brain, store, poster
+from rm import brain, store, poster, handoff
 from rm import discord_approve, telegram_approve
 
 ROOT = pathlib.Path(__file__).parent
@@ -20,21 +27,62 @@ ENV = {k: os.environ.get(k, "") for k in ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SEC
 # approval channel: discord if configured, else telegram
 tg = discord_approve if ENV["DISCORD_BOT_TOKEN"] else telegram_approve
 CFG = yaml.safe_load(open(ROOT / "config.yaml"))
+MODE = CFG.get("mode", "rss")
 _voice_path = ROOT / "voice.md" if (ROOT / "voice.md").exists() else ROOT / "voice.example.md"
 if _voice_path.name == "voice.example.md": print("[voice] voice.md not found, using voice.example.md. Copy it to voice.md and add your own writing samples.")
 VOICE = open(_voice_path, encoding="utf-8").read()
 
+# research backend: praw in api mode, public RSS feeds in rss mode
+if MODE == "api":
+    from rm import research
+else:
+    from rm import research_rss
+
+
+def _client():
+    if MODE == "api":
+        return research.reddit_client(ENV)
+    return research_rss.RssClient(CFG, ENV["REDDIT_USERNAME"])
+
+
+def _account(client):
+    if MODE == "api":
+        return research.account_status(client)
+    return research_rss.account_status(client, ENV["REDDIT_USERNAME"])
+
+
+def _threads(client):
+    if MODE == "api":
+        return research.find_threads(client, CFG)
+    return research_rss.find_threads(client, CFG)
+
+
+def _news():
+    if MODE == "api":
+        return research.news(CFG)
+    from rm import research as _r          # news feeds are ordinary RSS, no Reddit API involved
+    return _r.news(CFG)
+
+
 def morning(dry=False):
-    reddit = research.reddit_client(ENV)
-    st = research.account_status(reddit)
-    print(f"[account] u/{st['name']} comment karma {st['comment_karma']} link karma {st['link_karma']} unread {len(st['unread'])}")
-    for m in st["unread"]:
-        if any(w in (m["subject"] + m["body"]).lower() for w in ["banned", "removed", "warning", "suspend"]):
-            msg = f"MOD MESSAGE in inbox: {m['subject']}\n{m['body']}\nRead it before approving anything today."
-            print(msg); (not dry) and tg.notify(ENV, msg)
+    client = _client()
+    st = _account(client)
+    if MODE == "api":
+        print(f"[account] u/{st['name']} comment karma {st['comment_karma']} link karma {st['link_karma']} unread {len(st['unread'])}")
+        for m in st["unread"]:
+            if any(w in (m["subject"] + m["body"]).lower() for w in ["banned", "removed", "warning", "suspend"]):
+                msg = f"MOD MESSAGE in inbox: {m['subject']}\n{m['body']}\nRead it before approving anything today."
+                print(msg); (not dry) and tg.notify(ENV, msg)
+    else:
+        # RSS cannot read the inbox. Say so plainly rather than implying it was checked.
+        warn = ("Inbox NOT checked: no API access in rss mode. Open your Reddit inbox and read any "
+                "moderator message before you approve anything today.")
+        print(f"[account] u/{st['name']} (karma and inbox unavailable without the API)")
+        print(f"[account] {warn}")
+        if not dry: tg.notify(ENV, warn)
     store.expire_old()
 
-    threads = research.find_threads(reddit, CFG)
+    threads = _threads(client)
     print(f"[research] {len(threads)} candidate threads")
     picked, per_sub = [], {}
     for t in threads:
@@ -59,17 +107,38 @@ def morning(dry=False):
     if time.time() - last_post >= CFG["pacing"]["days_between_posts"] * 86400 and CFG["value_posts"]["post_allowed_subs"]:
         sub = random.choice(CFG["value_posts"]["post_allowed_subs"])
         theme = random.choice(CFG["value_posts"]["themes"])
-        items = research.news(CFG)
+        items = _news()
         p = brain.draft_post(ENV, CFG, VOICE, sub, theme, items)
         if p:
             print(f"\n=== VALUE POST for r/{sub}\n{p['title']}\n\n{p['body']}\n")
             if not dry:
                 qid = store.enqueue("post", sub, "", "", "", p["body"], title=p["title"])
                 tg.send_for_approval(ENV, qid, "post", sub, "", "", p["body"], title=p["title"]); sent += 1
-    if not dry: tg.notify(ENV, f"Morning run done. {sent} drafts sent. Karma {st['comment_karma']}/{st['link_karma']}. Approve what you like, the worker posts with pacing.")
+    if not dry:
+        tail = ("Approve what you like, then run `python run.py handoff` to paste them yourself."
+                if MODE != "api" else "Approve what you like, the worker posts with pacing.")
+        tg.notify(ENV, f"Morning run done. {sent} drafts sent. {tail}")
+
 
 def worker():
-    reddit = research.reddit_client(ENV)
+    if MODE != "api":
+        # Nothing can post on your behalf without API access.
+        print("[worker] rss mode: approvals only, nothing is posted automatically.")
+        print("[worker] approve drafts in Discord, then run: python run.py handoff")
+        if ENV["DISCORD_BOT_TOKEN"]:
+            discord_approve.run_worker(None, CFG, ENV, post=False)
+            return
+        offset = [0]
+        while True:
+            try:
+                telegram_approve.poll_decisions(ENV, offset)
+                n = handoff.pending_count()
+                print(datetime.datetime.now().strftime("%H:%M"), f"{n} approved and waiting for `run.py handoff`")
+            except Exception as e:
+                print("[worker] error", e)
+            time.sleep(60)
+
+    reddit = _client()
     if ENV["DISCORD_BOT_TOKEN"]:
         discord_approve.run_worker(reddit, CFG, ENV)      # blocks; handles buttons + posting loop
         return
@@ -83,17 +152,23 @@ def worker():
             print("[worker] error", e)
         time.sleep(60)
 
+
 def status():
-    reddit = research.reddit_client(ENV)
-    st = research.account_status(reddit)
     total, per_sub, last, last_post = store.counts_today()
-    print(f"u/{st['name']}: comment karma {st['comment_karma']}, link karma {st['link_karma']}, unread {len(st['unread'])}")
+    if MODE == "api":
+        st = _account(_client())
+        print(f"u/{st['name']}: comment karma {st['comment_karma']}, link karma {st['link_karma']}, unread {len(st['unread'])}")
+    else:
+        print(f"mode: rss (no Reddit API). Karma and inbox are not readable; check them in the app.")
     print(f"today: {total} comments {dict(per_sub)}; last activity {int((time.time()-last)/60) if last else '-'} min ago")
     with store.conn() as c:
         for r in c.execute("SELECT status, COUNT(*) n FROM queue GROUP BY status"): print(f"queue {r['status']}: {r['n']}")
 
+
 def preflight():
-    need = ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD", "REDDIT_USER_AGENT", "ANTHROPIC_API_KEY"]
+    need = ["ANTHROPIC_API_KEY"]
+    if MODE == "api":
+        need += ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD", "REDDIT_USER_AGENT"]
     if not ENV["DISCORD_BOT_TOKEN"] and not ENV["TELEGRAM_BOT_TOKEN"]:
         need += ["DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "DISCORD_OWNER_ID"]
     elif ENV["DISCORD_BOT_TOKEN"]:
@@ -104,7 +179,14 @@ def preflight():
     if missing:
         sys.exit(f"[.env] missing: {', '.join(missing)}\nFill them in {ROOT / '.env'} (see .env.example) and run again.")
 
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if cmd not in ("morning", "worker", "status", "dry", "handoff"):
+        sys.exit(f"unknown command '{cmd}'. one of: morning worker status dry handoff")
     preflight()
-    {"morning": morning, "worker": worker, "status": status, "dry": lambda: morning(dry=True)}[cmd]()
+    {"morning": morning,
+     "worker": worker,
+     "status": status,
+     "dry": lambda: morning(dry=True),
+     "handoff": lambda: handoff.run_all(CFG)}[cmd]()
