@@ -14,3 +14,6 @@ __pycache__/
 .idea/
 Thumbs.db
 .DS_Store
+
+# stray redirection artifacts from shell testing
+/1

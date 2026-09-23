@@ -23,7 +23,8 @@ ROOT = pathlib.Path(__file__).parent
 load_dotenv(ROOT / ".env")
 ENV = {k: os.environ.get(k, "") for k in ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD",
                                           "REDDIT_USER_AGENT", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                                          "DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "DISCORD_OWNER_ID"]}
+                                          "DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "DISCORD_OWNER_ID",
+                                          "ZERNIO_API_KEY", "ZERNIO_ACCOUNT_ID"]}
 # approval channel: discord if configured, else telegram
 tg = discord_approve if ENV["DISCORD_BOT_TOKEN"] else telegram_approve
 CFG = yaml.safe_load(open(ROOT / "config.yaml"))
@@ -180,10 +181,21 @@ def preflight():
         sys.exit(f"[.env] missing: {', '.join(missing)}\nFill them in {ROOT / '.env'} (see .env.example) and run again.")
 
 
+def zernio_accounts():
+    """Look up the accountId to put in ZERNIO_ACCOUNT_ID. Needs only ZERNIO_API_KEY."""
+    from rm import zernio
+    try:
+        zernio.print_accounts(ENV)
+    except zernio.ZernioError as e:
+        sys.exit(f"[zernio] {e}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
-    if cmd not in ("morning", "worker", "status", "dry", "handoff"):
-        sys.exit(f"unknown command '{cmd}'. one of: morning worker status dry handoff")
+    if cmd not in ("morning", "worker", "status", "dry", "handoff", "zernio-accounts"):
+        sys.exit(f"unknown command '{cmd}'. one of: morning worker status dry handoff zernio-accounts")
+    if cmd == "zernio-accounts":      # setup helper, runs before the rest of .env is filled
+        zernio_accounts(); sys.exit(0)
     preflight()
     {"morning": morning,
      "worker": worker,
