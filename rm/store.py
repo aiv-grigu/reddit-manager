@@ -70,6 +70,27 @@ def mention_stats(sub):
         in_sub = c.execute("SELECT COUNT(*) FROM posted WHERE kind='comment' AND sub=?", (sub,)).fetchone()[0]
         return sum(r["mention"] for r in recent), in_sub
 
+
+def last_mention(sub=None):
+    """When the product was last named, overall and in one sub. 0 = never.
+
+    Repetition is what gets a domain filtered, not any single comment. The cooldowns
+    built on this are the main defence against that.
+    """
+    with conn() as c:
+        q = "SELECT MAX(posted_at) FROM posted WHERE mention=1"
+        anywhere = c.execute(q).fetchone()[0] or 0
+        here = 0
+        if sub:
+            here = c.execute(q + " AND sub=?", (sub,)).fetchone()[0] or 0
+        return anywhere, here
+
+
+def mentions_since(days=30):
+    with conn() as c:
+        return c.execute("SELECT COUNT(*) FROM posted WHERE mention=1 AND posted_at>?",
+                         (time.time() - days * 86400,)).fetchone()[0]
+
 def already_engaged(thread_id):
     with conn() as c:
         return c.execute("SELECT 1 FROM posted WHERE thread_id=?", (thread_id,)).fetchone() is not None

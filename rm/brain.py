@@ -1,6 +1,6 @@
 """Draft -> edit to the owner's voice -> check -> rewrite loop. Every output passes style_checks or is dropped.
 The account owner reads and approves every draft by hand before anything is posted (see discord_approve)."""
-import json, re, random
+import json, re, random, time
 import anthropic
 from . import style_checks as hc, store
 
@@ -11,13 +11,30 @@ def _json(text):
     return json.loads(m.group(0)) if m else {}
 
 def mention_allowed(cfg, sub, thread):
-    """The 9:1 rule and the sub policy, decided in code, never by the model."""
+    """The 9:1 rule, the cooldowns and the sub policy, decided in code, never by the model.
+
+    Any single disclosed mention is fine. What gets a domain filtered is saying it too
+    often, so frequency is capped three ways: the 9:1 ratio, a gap between mentions
+    anywhere, and a much longer gap before naming it twice in the same subreddit.
+    """
     p = cfg["pacing"]
     if sub in cfg["mention_forbidden_subs"]: return False, "sub forbids mentions"
     recent_mentions, in_sub = store.mention_stats(sub)
     if recent_mentions >= p["max_mentions_per_10_comments"]: return False, "9:1 ratio used up"
     if in_sub < p["min_comments_in_sub_before_mention"] and sub not in cfg["mention_allowed_subs"]:
         return False, f"only {in_sub} comments in r/{sub}, need {p['min_comments_in_sub_before_mention']}"
+
+    now = time.time()
+    anywhere, here = store.last_mention(sub)
+    gap_any = p.get("min_days_between_mentions_anywhere", 2) * 86400
+    gap_sub = p.get("min_days_between_mentions_same_sub", 21) * 86400
+    if anywhere and now - anywhere < gap_any:
+        return False, f"last mention was {int((now - anywhere) / 3600)}h ago, need {int(gap_any / 3600)}h"
+    if here and now - here < gap_sub:
+        return False, f"already named it in r/{sub} {int((now - here) / 86400)}d ago, need {int(gap_sub / 86400)}d"
+    cap = p.get("max_mentions_per_30_days", 4)
+    if store.mentions_since(30) >= cap:
+        return False, f"{cap} mentions already in the last 30 days"
     asked = bool(re.search(r"\b(tool|tools|checker|scanner|software|app|service)s?\b.*\b(recommend|any|what|which|best)\b|\b(recommend|any|what|which|best)\b.*\b(tool|tools|checker|scanner|software|app)s?\b",
                            (thread["title"] + " " + thread["body"]).lower()))
     if sub in cfg["mention_allowed_subs"]: return True, "sub allows"
@@ -27,7 +44,16 @@ def mention_allowed(cfg, sub, thread):
 WRITER_SYS = """You draft Reddit comments for the account owner described in the voice profile below. They read, edit and approve every draft by hand before it is posted. The voice profile is law. Output JSON only:
 {"comment": "...", "why_this_angle": "...", "confidence": 0-100}
 Confidence is how sure you are that a real expert would say this. Under 60 means you are guessing; say so and keep it short.
-Never invent statistics. Never mention the product unless the user message says MENTION_ALLOWED: true, and then only as the last sentence using one of the given disclosure lines verbatim, adapted only for grammar.
+Never invent statistics.
+
+Your job is to actually solve the person's problem. Read what they are stuck on and answer that, specifically, the way someone who has hit the same thing would. Name the real file, the real setting, the real check. If you cannot genuinely help, say so and keep it short rather than padding.
+
+The product:
+- Never mention it unless the user message says MENTION_ALLOWED: true. Default is that it does not exist.
+- When allowed, the answer must be complete and useful WITHOUT it. Write the answer first as if there were no tool, then at most one closing sentence offering it, adapted from a given disclosure line.
+- The standalone test: if the mention were deleted, the comment must still fully answer the question. If it would not, the mention is doing the work and the draft fails.
+- The commercial relationship must stay visible in that sentence, but keep it light and human. "disclosure, that's us" or "I work on it so obviously biased" is enough. Never a formal disclaimer, never a pitch.
+- Never imply you came across it as a neutral user. Not "found this tool", not "came across", not "there's a tool called". That framing is dishonest and it is what gets a domain filtered.
 
 VOICE PROFILE:
 """

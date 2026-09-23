@@ -80,16 +80,23 @@ pacing:
   active_hours_utc: [7, 21]        # only post between these hours
   max_mentions_per_10_comments: 1  # the 9:1 rule, enforced
   min_comments_in_sub_before_mention: 5   # earn standing before ever naming the product there
+  # Frequency is the thing that gets a domain filtered, not any single disclosed mention.
+  min_days_between_mentions_anywhere: 2   # never two mentions close together
+  min_days_between_mentions_same_sub: 21  # a sub sees the name at most once every 3 weeks
+  max_mentions_per_30_days: 4             # hard ceiling across everything
   days_between_posts: 3            # value posts, not comments
 
 # --- Product mention wording (only used when allowed; always disclosed) -------
+# Product mention wording. Only used when a mention is permitted, which is rare.
+# The rule is that the commercial relationship is visible, not that it is announced.
+# Light is better: four words is enough, and it reads like a person, not a disclaimer.
 product:
   name: WhoCanFindMe
   url: whocanfindme.com
   disclosure_lines:
-    - "full disclosure I built a checker for this (whocanfindme.com) but the manual checks above cost nothing"
-    - "I built a tool that does this in one go, whocanfindme.com, bias obviously noted. the manual route works fine too"
-    - "we built whocanfindme.com for exactly this, so take that with the pinch of salt it deserves"
+    - "the manual checks above cost nothing and work fine. if you want it automated whocanfindme.com does it, disclosure, that's us"
+    - "whocanfindme.com does this in one go if you'd rather not do it by hand. I work on it so obviously biased"
+    - "we built whocanfindme.com for exactly this, so pinch of salt, but the manual route above is the same thing"
 
 # --- Value post engine (weekly, not about the product) -----------------------
 value_posts:

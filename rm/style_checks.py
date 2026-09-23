@@ -24,7 +24,17 @@ BANNED_PHRASES = [
 ]
 FAKE_DISCOVERY = ["found this tool", "came across", "stumbled upon", "stumbled across",
                   "there's a tool called", "there is a tool called", "i found a", "found a great"]
-DISCLOSURE_MARKERS = ["i built", "we built", "i made", "we made", "built this", "made this", "my tool", "our tool"]
+# A mention must make the commercial relationship visible. It does NOT have to be a
+# heavy announcement: "(disclosure, that's us)" is four words and does the job. Any one
+# of these satisfies the check, so the writer can pick whatever reads naturally.
+DISCLOSURE_MARKERS = [
+    "i built", "we built", "i made", "we made", "built this", "made this",
+    "my tool", "our tool", "i work on", "we work on", "i work with", "we work with",
+    "that's us", "thats us", "that's mine", "thats mine", "our thing", "we run",
+    "i'm involved", "im involved", "i'm biased", "im biased", "obviously biased",
+    "disclosure", "full disclosure", "for transparency", "our own", "we're behind",
+    "were behind", "i help build", "we build",
+]
 
 EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F900-\U0001F9FF]")
 MD_RE = re.compile(r"(^|\n)\s*(#{1,6}\s|\*\s|-\s|\d+\.\s|\*\*|__)")
@@ -77,7 +87,7 @@ def check(text: str, kind: str = "comment", mention_allowed: bool = False, produ
     if mentioned and not mention_allowed:
         v.append("product mentioned but mention not allowed for this draft")
     if mentioned and not any(m in low for m in DISCLOSURE_MARKERS):
-        v.append("product mentioned without disclosure (must say he built it)")
+        v.append("product mentioned without disclosure (make the connection visible, e.g. 'disclosure, that's us')")
     if mentioned:
         idx = low.rfind(product_url.lower())
         if idx < len(low) * 0.6: v.append("product mention must come at the end, after the full manual answer")
