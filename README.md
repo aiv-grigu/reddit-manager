@@ -49,8 +49,10 @@ Runs as a Discord bot listening for the owner's button presses. In `api` mode it
 
 The account should look like what it is: one person who answers questions in their field and occasionally, with disclosure, mentions the thing they built.
 
-- Nine of ten comments never mention the product. The tenth mentions it only in a sub whose rules allow it, only at the end, only after a complete answer, and only with an explicit "I built this" disclosure. This is enforced in code (`brain.mention_allowed` + `style_checks`), not left to the model.
-- Fake-discovery phrasing ("found this tool", "came across", "there's a tool called") is a hard reject. If the product is named, it is named as the author's own.
+- Nine of ten comments never mention the product. The tenth mentions it only in a sub whose rules allow it, only at the end, and only after an answer that stands on its own: if deleting the mention would leave the comment unhelpful, the draft fails. Enforced in code (`brain.mention_allowed` + `style_checks`), not left to the model.
+- A mention must make the commercial relationship visible, but it can be light. "disclosure, that's us" passes; it does not have to be a formal announcement.
+- Fake-discovery phrasing ("found this tool", "came across", "there's a tool called") is a hard reject. Claiming to have stumbled across your own product is dishonest, and it is the pattern that gets a domain filtered rather than just a comment removed.
+- Frequency is capped four ways: the 9:1 ratio, two days between mentions anywhere, three weeks before the same subreddit hears the name again, and four in any thirty days. Repetition is what burns a domain, not any single mention.
 - Comments before posts. The product is not named in a sub until the account has five prior helpful comments there.
 - Pacing is randomised and capped so the account keeps a normal human rhythm.
 - Nothing posts without a human tap. Ever.
@@ -60,9 +62,9 @@ The account should look like what it is: one person who answers questions in the
 Two layers, because either alone is not enough.
 
 **Rules engine** (`rm/style_checks.py`), deterministic, runs before and after the model:
-em dash and en dash, emoji, any markdown in comments, generic assistant phrases, sign-offs, three parallel sentences, colon-lists, uniform sentence length, semicolon overuse, length bounds, and the full product mention policy.
+em dash and en dash, emoji, any markdown in comments, ~100 assistant phrases, US spellings (the voice is British), filler openers, first/second/third scaffolding, sign-offs, three parallel sentences, colon-lists, uniform sentence length, semicolon overuse, length bounds, and the full product mention policy. A draft that still fails after three rewrites is dropped, never posted.
 
-**Editing pass** (`brain.edit_to_voice`), the model reads `voice.md` (the owner's own writing samples and register) plus the exact violations found, and rewrites to fix them without changing the advice. Every draft goes through at least one pass even if the rules engine found nothing.
+**Editing pass** (`brain.edit_to_voice`), the model reads `voice.md` (the owner's own writing samples and register) plus the exact violations found, and rewrites to fix them without changing the advice. Every draft goes through at least one pass even if the rules engine found nothing, then gets re-read as a sceptical Reddit user who has seen a thousand bot comments that week. The aim is not to disguise anything: it is that the account never emits the flat, evenly-cadenced, hedge-everything register that models default to, because that register is worthless to read and gets downvoted on sight.
 
 Test it yourself: `python -c "from rm import style_checks as h; print(h.check(open('t.txt').read()))"`
 

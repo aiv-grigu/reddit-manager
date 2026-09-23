@@ -21,6 +21,28 @@ BANNED_PHRASES = [
     "ultimately", "at the end of the day", "moreover", "furthermore", "additionally",
     "that being said", "with that said", "it's important to", "key takeaway", "pro tip",
     "quick tip", "as someone who", "cheers", "good luck", "let me know if",
+    # assistant register: hedging, instructing, and filler openers
+    "you'll want to", "you will want to", "you may want to", "i'd recommend",
+    "i would recommend", "make sure to", "be sure to", "keep in mind", "note that",
+    "when it comes to", "the key is", "one thing to", "a few things", "several factors",
+    "at play here", "it depends on a few", "in essence", "essentially", "effectively",
+    "simply put", "put simply", "rest assured", "worth considering", "consider whether",
+    "this can help", "hopefully this", "happy to help", "feel free to",
+    "rapidly evolving", "ever-evolving", "fast-paced", "double-edged",
+    "not only", "but also", "whether you're", "if you're looking to",
+    "there are several", "there are many", "a variety of", "a range of",
+    "plays a role", "plays a key", "is essential", "is important to note",
+]
+
+# The voice is British. US spellings are a hard tell that a model wrote it.
+US_SPELLINGS = [
+    "favor", "favors", "favored", "color", "colors", "behavior", "behaviors",
+    "optimize", "optimized", "optimizing", "optimization", "analyze", "analyzed",
+    "organize", "organized", "organization", "recognize", "recognized",
+    "prioritize", "prioritized", "customize", "customized", "utilize", "utilized",
+    "center", "centers", "centered", "defense", "offense", "license plate",
+    "traveling", "labeled", "canceled", "modeling", "catalog", "dialog",
+    "maximize", "minimize", "summarize", "specialize", "leverages",
 ]
 FAKE_DISCOVERY = ["found this tool", "came across", "stumbled upon", "stumbled across",
                   "there's a tool called", "there is a tool called", "i found a", "found a great"]
@@ -60,6 +82,25 @@ def check(text: str, kind: str = "comment", mention_allowed: bool = False, produ
         if p in low: v.append(f"banned phrase: '{p}'")
     for p in FAKE_DISCOVERY:
         if p in low: v.append(f"fake-discovery phrasing: '{p}' (must disclose, never pretend to have found it)")
+
+    for w in US_SPELLINGS:
+        if re.search(r"\b" + re.escape(w) + r"\b", low):
+            v.append(f"US spelling '{w}' (the voice is British)")
+
+    # openers that announce an answer instead of giving one
+    first = (sentences(text) or [""])[0].lower()
+    for opener in ("great ", "good ", "that's a ", "thats a ", "this is a common",
+                   "i think ", "so ", "well, ", "ah, ", "ah ", "yes, ", "absolutely",
+                   "definitely", "certainly", "sure, "):
+        if first.startswith(opener):
+            v.append(f"opens with filler ('{first[:28]}...'), start with the answer")
+            break
+    if first.rstrip("?").endswith(("mean", "asking", "wondering")) and first.endswith("?"):
+        v.append("opens by restating the question")
+
+    # the "rule of three" cadence models fall into
+    if re.search(r"\b(first(ly)?|one)\b.{10,160}\b(second(ly)?|two)\b.{10,160}\b(third(ly)?|three|final(ly)?|last(ly)?)\b", low, re.S):
+        v.append("first/second/third scaffolding")
 
     words = len(text.split())
     if kind == "comment" and not (35 <= words <= 130): v.append(f"comment length {words} words, need 40-120")
