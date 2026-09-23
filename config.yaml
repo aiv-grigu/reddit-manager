@@ -3,12 +3,23 @@
 
 account_label: default        # label for this instance. One instance, one Reddit account, one person.
 
-# How this instance reaches Reddit.
-#   rss  no Reddit API. Research from public RSS listing feeds; you paste each approved
-#        draft yourself via `python run.py handoff`. Works today, no approval needed.
-#   api  needs an approved Reddit Data API app (Responsible Builder Policy). Adds karma
-#        and inbox checks, thread comment counts, and posting once you approve a draft.
-mode: rss
+# How this instance reaches Reddit. In every mode you approve each draft, and in
+# rss/zernio you paste it yourself via `python run.py handoff`.
+#   zernio  third-party access over official OAuth (zernio.com). Real keyword search
+#           and real thread metadata (comment count, score, age). No Reddit app needed.
+#   rss     no Reddit account access at all. Public listing feeds only: no keyword
+#           search, no comment counts. The fallback if zernio ever stops working.
+#   api     needs an approved Reddit Data API app (Responsible Builder Policy). Adds
+#           the karma and inbox checks, and can post for you.
+mode: zernio
+
+# Only used in zernio mode.
+zernio:
+  feed_limit: 25
+  search_limit: 25
+  max_queries: 8              # how many of `queries:` to search each run
+  search_subreddits: true     # also run each query restricted to the main buyer subs
+  timeout_seconds: 25
 
 # Only used in rss mode. Reddit rate limits anonymous feed requests hard: back-to-back
 # requests get 429, roughly 45s apart is fine. A full morning sweep of ~24 subs takes

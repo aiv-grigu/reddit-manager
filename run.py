@@ -33,28 +33,38 @@ _voice_path = ROOT / "voice.md" if (ROOT / "voice.md").exists() else ROOT / "voi
 if _voice_path.name == "voice.example.md": print("[voice] voice.md not found, using voice.example.md. Copy it to voice.md and add your own writing samples.")
 VOICE = open(_voice_path, encoding="utf-8").read()
 
-# research backend: praw in api mode, public RSS feeds in rss mode
+# research backend: praw (api), Zernio's endpoints (zernio), or public RSS feeds (rss)
 if MODE == "api":
     from rm import research
+elif MODE == "zernio":
+    from rm import research_zernio
 else:
     from rm import research_rss
+
+REDDIT_USER = ENV["REDDIT_USERNAME"] or CFG.get("reddit_username", "")
 
 
 def _client():
     if MODE == "api":
         return research.reddit_client(ENV)
-    return research_rss.RssClient(CFG, ENV["REDDIT_USERNAME"])
+    if MODE == "zernio":
+        return research_zernio.client(ENV, CFG)
+    return research_rss.RssClient(CFG, REDDIT_USER)
 
 
 def _account(client):
     if MODE == "api":
         return research.account_status(client)
-    return research_rss.account_status(client, ENV["REDDIT_USERNAME"])
+    if MODE == "zernio":
+        return research_zernio.account_status(client, REDDIT_USER)
+    return research_rss.account_status(client, REDDIT_USER)
 
 
 def _threads(client):
     if MODE == "api":
         return research.find_threads(client, CFG)
+    if MODE == "zernio":
+        return research_zernio.find_threads(client, CFG)
     return research_rss.find_threads(client, CFG)
 
 
@@ -78,7 +88,7 @@ def morning(dry=False):
         # RSS cannot read the inbox. Say so plainly rather than implying it was checked.
         warn = ("Inbox NOT checked: no API access in rss mode. Open your Reddit inbox and read any "
                 "moderator message before you approve anything today.")
-        print(f"[account] u/{st['name']} (karma and inbox unavailable without the API)")
+        print(f"[account] u/{st['name']} (karma and inbox unavailable in {MODE} mode)")
         print(f"[account] {warn}")
         if not dry: tg.notify(ENV, warn)
     store.expire_old()
@@ -160,7 +170,7 @@ def status():
         st = _account(_client())
         print(f"u/{st['name']}: comment karma {st['comment_karma']}, link karma {st['link_karma']}, unread {len(st['unread'])}")
     else:
-        print(f"mode: rss (no Reddit API). Karma and inbox are not readable; check them in the app.")
+        print(f"mode: {MODE}. Karma and inbox are not readable in this mode; check them in the app.")
     print(f"today: {total} comments {dict(per_sub)}; last activity {int((time.time()-last)/60) if last else '-'} min ago")
     with store.conn() as c:
         for r in c.execute("SELECT status, COUNT(*) n FROM queue GROUP BY status"): print(f"queue {r['status']}: {r['n']}")
@@ -170,6 +180,8 @@ def preflight():
     need = ["ANTHROPIC_API_KEY"]
     if MODE == "api":
         need += ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD", "REDDIT_USER_AGENT"]
+    elif MODE == "zernio":
+        need += ["ZERNIO_API_KEY", "ZERNIO_ACCOUNT_ID"]
     if not ENV["DISCORD_BOT_TOKEN"] and not ENV["TELEGRAM_BOT_TOKEN"]:
         need += ["DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID", "DISCORD_OWNER_ID"]
     elif ENV["DISCORD_BOT_TOKEN"]:
